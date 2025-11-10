@@ -78,10 +78,10 @@ def load_data(filename):
     with open("shopping.csv") as f:
         reader = csv.reader(f)
         next(reader)
-        data = []
+        evidence = []
+        labels = []
         for row in reader:
-            data.append({
-                "evidence": [
+            evidence.append([
                     int(row[0]),
                     float(row[1]),
                     int(row[2]),
@@ -99,9 +99,10 @@ def load_data(filename):
                     int(row[14]),
                     1 if row[15] == "Returning_Visitor" else 0,
                     1 if row[16] == "TRUE" else 0
-                ],
-                "label": 1 if row[17] == "TRUE" else 0
-            })
+                ]
+            )
+            labels.append(1 if row[-1] == "TRUE" else 0)
+        return evidence, labels
 
 
 def train_model(evidence, labels):
@@ -129,7 +130,14 @@ def evaluate(labels, predictions):
     representing the "true negative rate": the proportion of
     actual negative labels that were accurately identified.
     """
-    raise NotImplementedError
+    true_positives = sum(1 for actual, predicted in zip(labels, predictions) if actual == 1 and predicted == 1)
+    true_negatives = sum(1 for actual, predicted in zip(labels, predictions) if actual == 0 and predicted == 0)
+    total_positives = sum(1 for actual in labels if actual == 1)
+    total_negatives = sum(1 for actual in labels if actual == 0)
+
+    sensitivity = true_positives / total_positives if total_positives else 0
+    specificity = true_negatives / total_negatives if total_negatives else 0
+    return (sensitivity, specificity)
 
 
 if __name__ == "__main__":
