@@ -1,6 +1,6 @@
 import sys
 import tensorflow as tf
-
+import torch
 from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoTokenizer, TFBertForMaskedLM
 
@@ -26,8 +26,10 @@ def main():
     if mask_token_index is None:
         sys.exit(f"Input must include mask token {tokenizer.mask_token}.")
 
-    # Use model to process input
-    model = TFBertForMaskedLM.from_pretrained(MODEL)
+    # Load TF model — MUST use from_pt=True
+    model = TFBertForMaskedLM.from_pretrained(MODEL, from_pt=True)
+
+    # Forward pass
     result = model(**inputs, output_attentions=True)
 
     # Generate predictions
@@ -37,66 +39,56 @@ def main():
         print(text.replace(tokenizer.mask_token, tokenizer.decode([token])))
 
     # Visualize attentions
-    visualize_attentions(inputs.tokens(), result.attentions)
+    visualize_attentions(tokenizer.convert_ids_to_tokens(inputs["input_ids"][0]), result.attentions)
 
 
 def get_mask_token_index(mask_token_id, inputs):
     """
-    Return the index of the token with the specified `mask_token_id`, or
-    `None` if not present in the `inputs`.
+    Return index of the [MASK] token.
     """
-    # TODO: Implement this function
-    raise NotImplementedError
-
+    input_ids = inputs["input_ids"][0].numpy()
+    for i, token_id in enumerate(input_ids):
+        if token_id == mask_token_id:
+            return i
+    return None
 
 
 def get_color_for_attention_score(attention_score):
     """
-    Return a tuple of three integers representing a shade of gray for the
-    given `attention_score`. Each value should be in the range [0, 255].
+    Convert attention score to grayscale color tuple (R, G, B).
+    - attention_score ∈ [0, 1]
     """
-    # TODO: Implement this function
-    raise NotImplementedError
-
+    shade = int(attention_score * 255)
+    return (shade, shade, shade)
 
 
 def visualize_attentions(tokens, attentions):
     """
-    Produce a graphical representation of self-attention scores.
-
-    For each attention layer, one diagram should be generated for each
-    attention head in the layer. Each diagram should include the list of
-    `tokens` in the sentence. The filename for each diagram should
-    include both the layer number (starting count from 1) and head number
-    (starting count from 1).
+    Produce diagrams for every layer and every attention head.
     """
-    # TODO: Update this function to produce diagrams for all layers and heads.
-    generate_diagram(
-        1,
-        1,
-        tokens,
-        attentions[0][0][0]
-    )
+    for layer_index, layer_attentions in enumerate(attentions):
+        # layer_attentions shape: (batch=1, num_heads, seq, seq)
+        for head_index, head_attentions in enumerate(layer_attentions[0]):
+            generate_diagram(
+                layer_index + 1,
+                head_index + 1,
+                tokens,
+                head_attentions.numpy()
+            )
 
 
 def generate_diagram(layer_number, head_number, tokens, attention_weights):
     """
-    Generate a diagram representing the self-attention scores for a single
-    attention head. The diagram shows one row and column for each of the
-    `tokens`, and cells are shaded based on `attention_weights`, with lighter
-    cells corresponding to higher attention scores.
-
-    The diagram is saved with a filename that includes both the `layer_number`
-    and `head_number`.
+    Draw a NxN grayscale attention map + axis labels.
     """
-    # Create new image
     image_size = GRID_SIZE * len(tokens) + PIXELS_PER_WORD
     img = Image.new("RGBA", (image_size, image_size), "black")
     draw = ImageDraw.Draw(img)
 
-    # Draw each token onto the image
+    # Draw token labels
     for i, token in enumerate(tokens):
-        # Draw token columns
+
+        # Vertical token text (rotated)
         token_image = Image.new("RGBA", (image_size, image_size), (0, 0, 0, 0))
         token_draw = ImageDraw.Draw(token_image)
         token_draw.text(
@@ -105,10 +97,10 @@ def generate_diagram(layer_number, head_number, tokens, attention_weights):
             fill="white",
             font=FONT
         )
-        token_image = token_image.rotate(90)
+        token_image = token_image.rotate(90, expand=True)
         img.paste(token_image, mask=token_image)
 
-        # Draw token rows
+        # Horizontal token text
         _, _, width, _ = draw.textbbox((0, 0), token, font=FONT)
         draw.text(
             (PIXELS_PER_WORD - width, PIXELS_PER_WORD + i * GRID_SIZE),
@@ -117,17 +109,19 @@ def generate_diagram(layer_number, head_number, tokens, attention_weights):
             font=FONT
         )
 
-    # Draw each word
+    # Draw grid cells
     for i in range(len(tokens)):
-        y = PIXELS_PER_WORD + i * GRID_SIZE
         for j in range(len(tokens)):
+            attention_val = float(attention_weights[i][j])
+            color = get_color_for_attention_score(attention_val)
+
             x = PIXELS_PER_WORD + j * GRID_SIZE
-            color = get_color_for_attention_score(attention_weights[i][j])
+            y = PIXELS_PER_WORD + i * GRID_SIZE
             draw.rectangle((x, y, x + GRID_SIZE, y + GRID_SIZE), fill=color)
 
     # Save image
-    img.save(f"Attention_Layer{layer_number}_Head{head_number}.png")
-
+    img.save(f"images/Attention_Layer{layer_number}_Head{head_number}.png")
+    
 
 if __name__ == "__main__":
     main()
